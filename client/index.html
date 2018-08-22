@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="ie=edge">
+  <title>傻逼五子棋</title>
+</head>
+<style>
+    *{
+        margin:0;
+        padding:0;
+    }
+    .box{
+        position:relative;
+        width:1100px;
+    }
+    #mycanvas{
+        display: block;
+        padding:1px;
+    }
+    .detail{
+        position:absolute;
+        top:0;
+        bottom:0;
+        right:0;
+        width:250px;
+        text-align:center;
+        height:600px;
+        padding-top:200px;
+    }
+    .flex{
+        display:flex;
+        align-items: center;
+    }
+    .po{
+        width:36px;
+        height:36px;
+        border-radius:50%;
+        margin-left:20px;
+    }
+    .p1{
+        background:radial-gradient( #b5b5b5 0% ,  #111 50% ,  #000 100% );
+    }
+    .p2{
+        background:radial-gradient( #ccc 0%,  #bbb 50% ,  #aaa 100% );
+    }
+    .now-player,.watch-player{
+        text-align: left;
+    }
+    .title{
+        font-size:20px;
+        color:#99f;
+    }
+</style>
+<link href="https://cdn.bootcss.com/minireset.css/0.0.2/minireset.min.css" rel="stylesheet">
+<link href="https://cdn.bootcss.com/toastr.js/latest/css/toastr.min.css" rel="stylesheet">
+<body>
+    X:<span id="x"></span>
+    Y:<span id="y"></span>
+    <div class="box">
+        <canvas id="mycanvas" width="900" height="900">hello</canvas>
+        <div class="detail">
+            <h3 class="title">欢迎来到 傻逼五子棋！</h3>
+            <div id="tip"></div>
+            <div id="you">
+                <div>
+                    <label>你的名字</label>
+                    <input type="text" name="playerName" id="playerName">
+                </div>
+                <div>
+                    <button id="reg">注册</button>
+                </div>
+            </div>
+            
+            <div class="flex"><span>当前: </span><div class="po p1" id="ps"></div></div>
+            <br/>
+            <br/>
+            <div class="flex" id="canPlay"><span>你是: </span><div class="po" id="nowPs"></div></div>
+            <div class="now-player">
+                当前对战玩家:
+                <ul id="nowPlayer">
+                    <li><span id="play1">暂无</span>---黑棋</li>
+                    <li><span id="play2">暂无</span>---白棋</li>
+                </ul>
+            </div>
+            <div class="watch-player">
+                观看者:
+                <ul id="watchPlay">
+                </ul>
+            </div>
+        </div>
+    </div>
+    <script src="https://cdn.bootcss.com/socket.io/2.1.1/socket.io.js"></script>
+    <script src="https://cdn.bootcss.com/jquery/3.3.1/jquery.min.js"></script>
+    <script src="https://cdn.bootcss.com/canvas-nest.js/1.0.1/canvas-nest.min.js"></script>
+    <script src="https://cdn.bootcss.com/toastr.js/latest/js/toastr.min.js"></script>
+    <script>
+        var bReg = document.getElementById('reg');
+        var iPlayerName = document.getElementById('playerName')
+        const PI = Math.PI
+        var player = 1
+        var oCanvas = document.getElementById('mycanvas')
+        var GAME_START = false  // 游戏是否开始
+        var player_1_Points = []
+        var player_2_Points = []
+        var context = oCanvas.getContext('2d')
+        var canAppend = true
+        var canDown = false
+        bReg.onclick = function(e){
+            var socket = io.connect('http://47.96.179.114:9000');
+            socket.emit('register',{playerName:iPlayerName.value})
+            document.getElementById('you').style.display = 'none'
+            socket.on('broadcast',function(data){
+                canAppend = true
+                var res = data.dataInfo
+                switch(res.nowPlayers.length){
+                    case 0: {
+                        $('#play1').text('暂无')
+                        $('#play2').text('暂无')
+                        break;
+                    }
+                    case 1: {
+                        document.getElementById('play1').innerText = res.nowPlayers[0].name
+                        document.getElementById('play2').innerText = '等待中...'
+                        break;
+                    }
+                    case 2: {
+                        document.getElementById('play1').innerText = res.nowPlayers[0].name
+                        document.getElementById('play2').innerText = res.nowPlayers[1].name
+                        break;
+                    }
+                }
+                if(canAppend){
+                    res.watcher.forEach(v => {
+                        var item = document.createElement('li');
+                        item.innerText = v.name
+                        document.getElementById('watchPlay').appendChild(item)
+                    })
+                }
+            })
+            socket.on('start',function(data){
+                var tip = document.getElementById('tip')
+                toastr.info('游戏马上开始')
+                var count = 3;
+                var timer = setInterval(function(){
+                    if(count === 0){
+                        clearInterval(timer)
+                        GAME_START = true
+                        toastr.remove()
+                    }
+                    toastr.info('游戏将于'+ count +'s后开始',{timeout:2000})
+                    count--
+                },1000)
+            })
+
+            socket.on('over',function(data){
+                toastr.success('恭喜!' + data.msg + '请玩家重新登录')
+                setTimeout(function(){
+                    window.location.reload()
+                },5000)
+                GAME_START = false
+            })
+
+            socket.on('loading',function(data){
+                toastr.success(data.msg)
+            })
+
+            socket.on('join',function(data){
+                toastr.success(data.msg)
+            })
+            socket.on('err',function(data){
+                if(data.status === 100){
+                    document.getElementById('you').style.display = 'block'
+                }
+                canAppend = false
+                toastr.error(data.msg)
+            })
+            socket.on('sys',function(data){
+                player_1_Points = data.player_1_Points
+                player_2_Points = data.player_2_Points
+                for(var i = 0;i<player_1_Points.length;i++){
+                    if(player_1_Points[i].active){
+                        downP([player_1_Points[i]],1)
+                    }
+                }
+                for(var i = 0;i<player_2_Points.length;i++){
+                    if(player_2_Points[i].active){
+                        downP([player_2_Points[i]],2)
+                    }
+                }
+                if(data.roles === 1){
+                    player = data.account.isActive
+                    if (player === 1){
+                        canDown = true
+                    } else {
+                        canDown = false
+                    }
+                    document.getElementById('nowPs').className = 'po p' + player
+                }
+                if(data.isStart){
+                    toastr.warning('当前正在游戏中,请先观看游戏')
+                    document.getElementById('nowPs').innerText = '观众'
+                }
+            })
+            
+            socket.on('canPoint',function(data){    // 可以落子，绘制图形
+                var result = data.result
+                downP(result,data.player)
+                if(data.player === player){
+                    canDown = false
+                }else{
+                    canDown = true
+                }
+                document.getElementById('ps').className = 'po p' + (data.player === 1 ? 2 : 1)
+            })
+
+            oCanvas.onclick = function(ev) {
+                if (!GAME_START){
+                    return false
+                }
+                if (!canDown) {
+                    return false
+                }
+                var ev = ev || window.ev;
+                var x = ev.offsetX;
+                var y = ev.offsetY;
+
+                var nowPoints = player === 1 ? player_1_Points : player_2_Points
+                var result = isPoints({x,y},nowPoints)
+                if(result.length > 0 && !result.active){
+                    canDown = false
+                    socket.emit('downPoint',{player,x,y})
+                }
+            }
+        }
+        function moveTo(con,x,y){
+            con.moveTo(parseInt(x)+0.5,parseInt(y)+0.5)
+        }
+        function lineTo(con,x,y){
+            con.lineTo(parseInt(x)+0.5,parseInt(y)+0.5)
+        }
+
+        function isPoints(obj,points) {
+            var res;
+            res = points.filter(v => {
+                var s = Math.abs(obj.x-v.x) < 6 && Math.abs(obj.y-v.y) < 6
+                if(v.active){
+                    return false
+                } else if(s){
+                    v.active = true
+                    return true
+                }
+            })
+            return res
+        }
+
+        function createP(con,type){
+            if (type === 1) {
+                con.addColorStop(0,'#000');
+                con.addColorStop(0.2,'#111');
+                con.addColorStop(0.4,'#333');
+                con.addColorStop(0.6,'#666');
+                con.addColorStop(0.8,'#999');
+                con.addColorStop(1,'#bbb');
+            } else {
+                con.addColorStop(0,'#a9a9a9');
+                con.addColorStop(0.2,'#b8b8b8');
+                con.addColorStop(0.4,'#c3c3c3');
+                con.addColorStop(0.6,'#c9c9c9');
+                con.addColorStop(0.8,'#d5d5d5');
+                con.addColorStop(1,'#d9d9d9');
+            }
+            return con
+        }
+
+        function downP(result,type){
+            var grad = context.createRadialGradient(result[0].x,result[0].y,18,result[0].x,result[0].y,0)
+            grad = createP(grad,type)
+            context.fillStyle = grad
+            context.beginPath()
+            context.arc(result[0].x,result[0].y,18,0,PI*2)
+            context.fill()
+        }
+
+        oCanvas.onmousemove = function (ev) {
+            document.getElementById('x').innerText = ev.offsetX
+            document.getElementById('y').innerText = ev.offsetY
+        }
+        
+        for(var i = 1;i<21;i++){
+            context.beginPath()
+            moveTo(context,40,i*40);
+            lineTo(context,800,i*40);
+            context.strokeStyle = '#c9c9c9';
+            context.lineWidth = 1;
+            moveTo(context,i*40,40);
+            lineTo(context,i*40,800);
+            context.stroke()
+        }
+        
+    </script>
+</body>
+</html>
